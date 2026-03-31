@@ -1,6 +1,6 @@
 # Report Quality Guide
 
-Deep reference for writing high-quality DailyBot progress reports. This file supplements the main skill instructions with detailed writing standards, templates, and rules.
+Deep reference for writing high-quality Dailybot progress reports. This file supplements the main skill instructions with detailed writing standards, templates, and rules.
 
 ## The Human-First Principle
 
@@ -172,7 +172,7 @@ Milestones flag reports as significant accomplishments that stand out in the tea
 
 ## Co-Author Rules
 
-The DailyBot backend automatically credits the authenticated CLI user as a co-author. No action needed for the default case.
+The Dailybot backend automatically credits the authenticated CLI user as a co-author. No action needed for the default case.
 
 Only use `--co-authors` when:
 - The user explicitly says "add X as co-author" or "I worked on this with Y"

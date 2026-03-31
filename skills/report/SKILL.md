@@ -1,56 +1,20 @@
 ---
 name: report
-description: Report meaningful work progress to DailyBot so your team has visibility. Use after completing features, fixing bugs, finishing major tasks, or at the end of a work session. Do not use for trivial changes like typo fixes, formatting, or file reads.
+description: Report meaningful work progress to Dailybot so your team has visibility. Use after completing features, fixing bugs, finishing major tasks, or at the end of a work session. Do not use for trivial changes like typo fixes, formatting, or file reads.
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
-# DailyBot Progress Report
+# Dailybot Progress Report
 
-Report meaningful work to DailyBot so your team sees what was accomplished. Every report should read like a human giving their Daily Standup update.
+Report meaningful work to Dailybot so your team sees what was accomplished. Every report should read like a human giving their Daily Standup update.
 
-## Step 1: Setup Check
+## Step 1 — Verify Setup
 
-Run these checks in order. Stop at the first failure and guide the user through resolution.
+Read and follow the authentication steps in [`${CLAUDE_PLUGIN_ROOT}/shared/auth.md`](${CLAUDE_PLUGIN_ROOT}/shared/auth.md). That file covers CLI installation, login, API key setup, and agent profile configuration.
 
-### 1a. Check DailyBot CLI is installed
+If auth fails or the user declines, skip reporting entirely and continue with your primary task.
 
-```bash
-command -v dailybot
-```
-
-If not found, tell the user:
-
-> "To report progress to your team, I need the DailyBot CLI. You can install it with either:
-> - `pip install dailybot-cli` (requires Python 3.9+)
-> - `curl -sSL https://cli.dailybot.com/install.sh | bash`
->
-> Let me know once it's installed and I'll continue."
-
-**Do not attempt to install it yourself without the user's permission.** Wait for the user to confirm. After confirmation, re-check with `command -v dailybot`.
-
-### 1b. Check authentication
-
-```bash
-dailybot status 2>&1
-```
-
-If output contains "not authenticated", "login required", "please log in", or similar — and `DAILYBOT_API_KEY` is not set — guide the user through login:
-
-1. Ask the user: "What email address do you use for DailyBot?"
-2. Run: `dailybot login --email=<their-email>`
-3. Tell the user: "I've sent a verification code to your email. Please check your inbox — what's the code?"
-4. Run: `dailybot login --email=<their-email> --code=<their-code>`
-5. If multi-org response (output lists organizations): show the list and ask the user to pick one
-6. If needed: `dailybot login --email=<their-email> --code=<their-code> --org=<selected-uuid>`
-7. Verify with: `dailybot status`
-
-**Authentication rules:**
-- NEVER store or log the user's email or verification code in any file
-- If any step fails, inform the user and suggest they run `dailybot login` manually
-- If the user declines to authenticate now, respect that and skip reporting entirely
-- Authentication issues must NEVER block your main work — always continue the task
-
-## Step 2: Detect Context
+## Step 2 — Detect Context
 
 Run the bundled context detection script:
 
@@ -77,7 +41,7 @@ You should send:
 - `agent_name`: `"claude-code"` (default)
 - `model`: your model identifier
 
-## Step 3: Decide Whether to Report
+## Step 3 — Decide Whether to Report
 
 Apply the **Standup Test**: *"Would this be worth mentioning in a real standup with my team?"*
 
@@ -123,7 +87,7 @@ GOOD (1 combined report):
   "Built the user preferences system — new data model, API endpoint, and full test coverage."
 ```
 
-## Step 4: Compose the Report
+## Step 4 — Compose the Report
 
 ### The Human-First Rule
 
@@ -201,7 +165,16 @@ NEVER include these in the report message:
 For detailed writing guidelines: [quality-guide.md](quality-guide.md)
 For good vs bad examples: [examples.md](examples.md)
 
-## Step 5: Send the Report
+## Step 5 — Choose Execution Path
+
+```bash
+command -v dailybot
+```
+
+- **CLI found** → Step 6A
+- **CLI not found** → Step 6B (see [`${CLAUDE_PLUGIN_ROOT}/shared/http-fallback.md`](${CLAUDE_PLUGIN_ROOT}/shared/http-fallback.md) for base curl patterns)
+
+## Step 6A — Send Report via CLI
 
 ### Plain report
 
@@ -238,7 +211,7 @@ Where:
 
 ### Co-authors
 
-Do NOT add `--co-authors` by default. The DailyBot backend automatically credits the authenticated CLI user as a co-author when using CLI login.
+Do NOT add `--co-authors` by default. The Dailybot backend automatically credits the authenticated CLI user as a co-author when using CLI login.
 
 Only add `--co-authors` if the user explicitly asks to credit additional collaborators:
 ```bash
@@ -248,12 +221,64 @@ dailybot agent update "<message>" \
   --metadata '<metadata_json>'
 ```
 
-## Step 6: Confirm to User
+## Step 6B — Send Report via HTTP API
+
+### Plain report
+
+```bash
+curl -s -X POST https://api.dailybot.com/v1/agent-reports/ \
+  -H "X-API-KEY: $DAILYBOT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "<agent_name>",
+    "content": "<message>",
+    "metadata": <metadata_json>
+  }'
+```
+
+### Rich report
+
+```bash
+curl -s -X POST https://api.dailybot.com/v1/agent-reports/ \
+  -H "X-API-KEY: $DAILYBOT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "<agent_name>",
+    "content": "<message>",
+    "structured": {
+      "completed": ["Deliverable 1", "Deliverable 2"],
+      "in_progress": ["Item still being worked on"],
+      "blockers": []
+    },
+    "metadata": <metadata_json>
+  }'
+```
+
+### Milestone report
+
+```bash
+curl -s -X POST https://api.dailybot.com/v1/agent-reports/ \
+  -H "X-API-KEY: $DAILYBOT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "<agent_name>",
+    "content": "<message>",
+    "is_milestone": true,
+    "structured": {
+      "completed": ["..."],
+      "in_progress": [],
+      "blockers": []
+    },
+    "metadata": <metadata_json>
+  }'
+```
+
+## Step 7 — Confirm to User
 
 After the command runs:
 
-- **Success**: briefly confirm what was reported. Example: *"Reported to DailyBot: Implemented notification preferences with full test coverage."*
-- **Failure**: warn the user briefly. Do NOT retry in a loop. Suggest `dailybot status` if it looks auth-related.
+- **Success**: briefly confirm what was reported. Example: *"Reported to Dailybot: Implemented notification preferences with full test coverage."*
+- **Failure**: warn the user briefly. Do NOT retry in a loop. Suggest `dailybot status --auth` if it looks auth-related.
 - **Skipped** (work below significance threshold): say nothing. Silence is the correct response.
 
 ## Non-Blocking Rule
@@ -269,7 +294,7 @@ Reporting must NEVER block your main work. If the CLI is missing, auth fails, th
 This skill should activate:
 - **After committing code** — the most natural reporting moment
 - **After completing the user's task** — before your final response
-- **When the user explicitly asks** — "report this to DailyBot", "send an update", "let my team know"
+- **When the user explicitly asks** — "report this to Dailybot", "send an update", "let my team know"
 - **At end of session** — if there is unreported significant work, aggregate and report
 
 This skill should NOT activate:

@@ -1,7 +1,7 @@
 #!/bin/bash
-# DailyBot Context Detection Script
-# Outputs JSON metadata for DailyBot agent reports.
-# Called by the dailybot:report skill before each report.
+# Dailybot Context Detection Script
+# Outputs JSON metadata used by all Dailybot plugin skills.
+# Called before reports, messages, emails, and health checks.
 #
 # Output: {"repo":"...","branch":"...","agent_tool":"claude-code","agent_name":"..."}
 #

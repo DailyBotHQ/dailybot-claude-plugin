@@ -1,19 +1,19 @@
 {
   "name": "dailybot",
-  "description": "Report work progress to DailyBot so your team has visibility into what you accomplished. Works on any project — just install and start working.",
-  "version": "1.0.0",
+  "description": "Connect Claude Code to your team via Dailybot — report progress, check messages, send emails, and announce agent status. Works on any project, even if you don't have a Dailybot account yet.",
+  "version": "2.0.0",
   "author": {
-    "name": "DailyBot",
+    "name": "Dailybot",
     "url": "https://www.dailybot.com"
   },
   "homepage": "https://www.dailybot.com",
-  "repository": "https://github.com/AiDailyBot/dailybot-claude-plugin",
+  "repository": "https://github.com/AiDailybot/dailybot-claude-plugin",
   "license": "MIT",
-  "keywords": ["dailybot", "progress", "standup", "reporting", "team", "visibility"],
+  "keywords": ["dailybot", "progress", "standup", "reporting", "team", "visibility", "messages", "email", "health"],
   "userConfig": {
     "agent_name": {
       "title": "Agent Name",
-      "description": "Name shown in DailyBot for this agent (default: claude-code)",
+      "description": "Name shown in Dailybot for this agent (default: claude-code)",
       "type": "string",
       "sensitive": false
     }

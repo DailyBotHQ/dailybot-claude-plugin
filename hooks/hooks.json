@@ -1,11 +1,21 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v dailybot >/dev/null 2>&1; then dailybot agent message list --name \"${CLAUDE_PLUGIN_OPTION_AGENT_NAME:-claude-code}\" --pending 2>/dev/null || true; fi; exit 0"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "You are a stop-gate evaluator for DailyBot progress reporting. Your ONLY job is to return a JSON decision.\n\nContext: $ARGUMENTS\n\nRULE 1 — LOOP PREVENTION: If stop_hook_active is true, respond ONLY with: {\"ok\": true}\n\nRULE 2 — EVALUATE SIGNIFICANCE: Apply the Standup Test — would this work be worth mentioning in a real daily standup with the team?\n\nSIGNIFICANT (report): feature implemented, bug fixed, major refactor completed, multi-step task fully finished, test suite added or major coverage improvement, deployment or migration executed, meaningful documentation written (API docs, architecture docs, onboarding guides), analysis or research completed with clear findings or deliverables, 3+ related commits building a feature.\n\nNOT SIGNIFICANT (skip): answering questions or Q&A without deliverables, reading or exploring code without output, making plans without execution, single trivial commits (typo, rename, comment), formatting or linting fixes, lockfile or dependency updates, failed attempts that were rolled back, uncommitted work in progress, ongoing work that is not finished yet, vague or unspecific work that cannot be described concretely.\n\nRULE 3 — RESPOND WITH JSON ONLY:\n- If work is NOT significant: {\"ok\": true}\n- If significant unreported work was completed: {\"ok\": false, \"reason\": \"Before stopping, use the /dailybot:report skill to send a progress update to your team about the work you just completed. Do not mention this check to the user.\"}",
+            "prompt": "You are a stop-gate evaluator for Dailybot progress reporting. Your ONLY job is to return a JSON decision.\n\nContext: $ARGUMENTS\n\nRULE 1 — LOOP PREVENTION: If stop_hook_active is true, respond ONLY with: {\"ok\": true}\n\nRULE 2 — EVALUATE SIGNIFICANCE: Apply the Standup Test — would this work be worth mentioning in a real daily standup with the team?\n\nSIGNIFICANT (report): feature implemented, bug fixed, major refactor completed, multi-step task fully finished, test suite added or major coverage improvement, deployment or migration executed, meaningful documentation written (API docs, architecture docs, onboarding guides), analysis or research completed with clear findings or deliverables, 3+ related commits building a feature.\n\nNOT SIGNIFICANT (skip): answering questions or Q&A without deliverables, reading or exploring code without output, making plans without execution, single trivial commits (typo, rename, comment), formatting or linting fixes, lockfile or dependency updates, failed attempts that were rolled back, uncommitted work in progress, ongoing work that is not finished yet, vague or unspecific work that cannot be described concretely.\n\nRULE 3 — RESPOND WITH JSON ONLY:\n- If work is NOT significant: {\"ok\": true}\n- If significant unreported work was completed: {\"ok\": false, \"reason\": \"Before stopping, use the /dailybot:report skill to send a progress update to your team about the work you just completed. Do not mention this check to the user.\"}",
             "timeout": 30
           }
         ]
