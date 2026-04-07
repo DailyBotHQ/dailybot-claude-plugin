@@ -1,12 +1,12 @@
 ---
 name: report
-description: Report meaningful work progress to Dailybot so your team has visibility. Use after completing features, fixing bugs, finishing major tasks, or at the end of a work session. Do not use for trivial changes like typo fixes, formatting, or file reads.
+description: Report work progress to Dailybot. Use after completing a discrete task or subtask, or after any batch of edits that modifies 3 or more files. Do not wait for permission. Include what changed and why.
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
 # Dailybot Progress Report
 
-Report meaningful work to Dailybot so your team sees what was accomplished. Every report should read like a human giving their Daily Standup update.
+Report work progress to Dailybot so your team sees what was accomplished. Every report should read like a human giving their daily standup update.
 
 ## Step 1 — Verify Setup
 
@@ -41,37 +41,22 @@ You should send:
 - `agent_name`: `"claude-code"` (default)
 - `model`: your model identifier
 
-## Step 3 — Decide Whether to Report
+## Step 3 — Trigger Check
 
-Apply the **Standup Test**: *"Would this be worth mentioning in a real standup with my team?"*
+Send a progress report when **either** condition is met:
 
-### REPORT these (significant work):
+1. **Task completed** — You finished a discrete task or subtask (e.g., a todo item, a user-requested change, a bug fix, a feature).
+2. **Broad edit** — You modified 3 or more files in a single batch of edits.
 
-| Category | Examples |
-|----------|----------|
-| Feature implemented | New endpoint, new component, new integration |
-| Bug fixed | User-facing bug resolved, edge case handled |
-| Major refactor | Architecture change, schema redesign, system improvement |
-| Multi-step task completed | Complex task fully finished with multiple deliverables |
-| Test suite added | New test suite, significant coverage improvement |
-| Deployment or migration | Service deployed, migration executed |
-| Meaningful documentation | API docs, architecture docs, onboarding guides |
-| Analysis or research | Completed investigation with clear findings or deliverables |
+Do not wait for permission. Do not second-guess whether the work is "significant enough." If either condition is met, report.
 
-### DO NOT REPORT these (noise):
+If the user explicitly asks you to report, always report regardless of these conditions.
 
-| Category | Why it's noise |
-|----------|---------------|
-| Single trivial commit (typo, rename) | Not standup-worthy |
-| Uncommitted work in progress | Work isn't done yet |
-| Lockfile or dependency updates | Automated maintenance |
-| Formatting or linting fixes | No functional change |
-| Reading or exploring code | No output produced |
-| Failed attempts that were rolled back | Net zero change |
-| Q&A conversation without deliverables | No tangible output |
-| Vague summary ("completed work session") | If you can't be specific, don't report |
+### What to include
 
-**If you cannot describe what was done specifically, do not report. Silence is better than noise.**
+Every report must answer two questions:
+- **What changed** — concrete outcomes, not file paths
+- **Why** — the purpose or motivation behind the change
 
 ### Aggregate related work
 
@@ -137,13 +122,7 @@ Rules:
 
 ### When to use `--milestone`
 
-Use it for:
-- Major feature fully shipped
-- Significant multi-step task completed
-- Deployment or migration executed
-- Large effort wrapped up
-
-Do NOT use for: regular commits, individual bug fixes, incremental progress.
+Mark a report as a milestone only when the **top-level task is fully completed** — all subtasks are done and the entire requested piece of work is wrapped up. Individual subtask completions are regular reports, not milestones. If the user explicitly asks for a milestone, always honor it.
 
 ### Forbidden patterns in report messages
 
@@ -291,17 +270,11 @@ Reporting must NEVER block your main work. If the CLI is missing, auth fails, th
 
 ## When This Skill Activates
 
-This skill should activate:
-- **After committing code** — the most natural reporting moment
-- **After completing the user's task** — before your final response
-- **When the user explicitly asks** — "report this to Dailybot", "send an update", "let my team know"
-- **At end of session** — if there is unreported significant work, aggregate and report
-
-This skill should NOT activate:
-- During exploratory work with no output
-- When only reading or analyzing code
-- When the user is still working (mid-task)
-- For trivial changes that fail the standup test
+This skill should activate when either trigger condition is met:
+- **Task completed** — you finished a discrete task or subtask
+- **Broad edit** — you modified 3 or more files in a single batch of edits
+- **User request** — the user explicitly asks to report ("report this to Dailybot", "send an update", "let my team know")
+- **End of session** — if there is unreported work that met either trigger condition, aggregate and report
 
 ## Additional Resources
 

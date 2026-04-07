@@ -154,21 +154,9 @@ Use `--json-data` when a report covers multiple distinct deliverables.
 
 ## Milestone Guidelines
 
-Milestones flag reports as significant accomplishments that stand out in the team's timeline.
+Milestones flag reports as top-level task completions that stand out in the team's timeline.
 
-### Use `--milestone` for:
-- Feature fully shipped and ready for users
-- Major refactor or migration completed
-- Deployment to production
-- Multi-step task or plan fully finished
-- Critical bug fix with high user impact
-
-### Do NOT use `--milestone` for:
-- Regular per-commit updates
-- Individual bug fixes (unless critical)
-- Incremental progress within a larger effort
-- Documentation updates
-- Test additions (unless a major coverage milestone)
+Mark a report as a milestone only when the **top-level task is fully completed** — all subtasks are done and the entire requested piece of work is wrapped up. Individual subtask completions are regular reports, not milestones. If the user explicitly asks for a milestone, always honor it.
 
 ## Co-Author Rules
 
