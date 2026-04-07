@@ -155,6 +155,8 @@ command -v dailybot
 
 ## Step 6A — Send Report via CLI
 
+> **Timeout**: Allow at least 30 seconds for CLI commands to complete. Do not use a shorter timeout.
+
 ### Plain report
 
 ```bash
