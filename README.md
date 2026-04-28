@@ -121,4 +121,4 @@ When you're logged in via CLI, Dailybot automatically credits you as a co-author
 - [Dailybot](https://www.dailybot.com)
 - [Dailybot CLI on PyPI](https://pypi.org/project/dailybot-cli/)
 - [Dailybot Agent API docs](https://api.dailybot.com/skill.md)
-- [Plugin source code](https://github.com/AiDailybot/dailybot-claude-plugin)
+- [Plugin source code](https://github.com/DailyBotHQ/dailybot-claude-plugin)

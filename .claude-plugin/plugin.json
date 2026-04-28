@@ -7,7 +7,7 @@
     "url": "https://www.dailybot.com"
   },
   "homepage": "https://www.dailybot.com",
-  "repository": "https://github.com/AiDailybot/dailybot-claude-plugin",
+  "repository": "https://github.com/DailyBotHQ/dailybot-claude-plugin",
   "license": "MIT",
   "keywords": ["dailybot", "progress", "standup", "reporting", "team", "visibility", "messages", "email", "health"],
   "userConfig": {
