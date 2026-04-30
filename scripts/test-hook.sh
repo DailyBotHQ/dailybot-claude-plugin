@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ACCUMULATOR="$ROOT/hooks/accumulator.sh"
 GATE="$ROOT/hooks/gate.sh"
 CLEANUP="$ROOT/hooks/cleanup.sh"
+MARK_REPORTED="$ROOT/hooks/mark-reported.sh"
 
 # Use an isolated storage root for tests.
 export CLAUDE_PLUGIN_DATA="$(mktemp -d)"
@@ -292,7 +293,121 @@ scenario_llm_failure() {
   fi
 }
 
-ALL=(trivial loop significant already_reported rate_limited filtered filter_false_positive cleanup llm_disabled llm_failure)
+run_mark_reported() {
+  printf '%s' "$1" | bash "$MARK_REPORTED"
+  return $?
+}
+
+scenario_mark_reported_cli() {
+  echo "=== mark-reported: CLI report command → creates .reported flag ==="
+  local sid="test-mrcli-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{
+    session_id: $sid,
+    tool_name: "Bash",
+    tool_input: { command: "dailybot agent update \"Fixed auth bug\" --name claude-code --metadata {}" },
+    tool_response: "OK Report submitted (id: abc-123)"
+  }')"
+  run_mark_reported "$input"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ -f "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ]; then
+    echo "  [PASS] .reported flag created"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] .reported flag not created"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_mark_reported_http() {
+  echo "=== mark-reported: HTTP fallback report → creates .reported flag ==="
+  local sid="test-mrhttp-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{
+    session_id: $sid,
+    tool_name: "Bash",
+    tool_input: { command: "curl -s -X POST https://api.dailybot.com/v1/agent-reports/ -H \"X-API-KEY: ...\" -d ..." },
+    tool_response: "{\"id\": \"report-456\"}"
+  }')"
+  run_mark_reported "$input"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ -f "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ]; then
+    echo "  [PASS] .reported flag created"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] .reported flag not created"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_mark_reported_non_report() {
+  echo "=== mark-reported: non-report Bash command → no flag ==="
+  local sid="test-mrnr-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{
+    session_id: $sid,
+    tool_name: "Bash",
+    tool_input: { command: "ls -la src/" },
+    tool_response: "total 42"
+  }')"
+  run_mark_reported "$input"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ ! -f "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ]; then
+    echo "  [PASS] no flag for non-report command"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] flag created for non-report command"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_mark_reported_failure() {
+  echo "=== mark-reported: failed report → no flag ==="
+  local sid="test-mrfail-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{
+    session_id: $sid,
+    tool_name: "Bash",
+    tool_input: { command: "dailybot agent update \"Fixed bug\" --name claude-code" },
+    tool_response: "Error: authentication failed"
+  }')"
+  run_mark_reported "$input"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ ! -f "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ]; then
+    echo "  [PASS] no flag after failed report"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] flag created despite failure"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_mark_reported_edit_tool() {
+  echo "=== mark-reported: Edit tool (not Bash) → no flag ==="
+  local sid="test-mredit-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{
+    session_id: $sid,
+    tool_name: "Edit",
+    tool_input: { file_path: "src/app.py" }
+  }')"
+  run_mark_reported "$input"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ ! -f "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ]; then
+    echo "  [PASS] no flag for Edit tool"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] flag created for Edit tool"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+ALL=(trivial loop significant already_reported rate_limited filtered filter_false_positive cleanup llm_disabled llm_failure mark_reported_cli mark_reported_http mark_reported_non_report mark_reported_failure mark_reported_edit_tool)
 TARGET="${1:-all}"
 
 if [ "$TARGET" = "all" ]; then

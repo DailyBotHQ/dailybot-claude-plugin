@@ -254,25 +254,9 @@ curl -s -X POST https://api.dailybot.com/v1/agent-reports/ \
   }'
 ```
 
-## Step 7 — Mark Session as Reported
+## Step 7 — Confirm to User
 
-After a successful send (Step 6A or 6B), record a flag file so the Stop hook does not re-nudge for this session.
-
-The current session ID is: **${CLAUDE_SESSION_ID}**
-
-Use that value in the following command:
-
-```bash
-STORAGE_ROOT="${CLAUDE_PLUGIN_DATA:-$HOME/.dailybot-claude/sessions}"
-mkdir -p "$STORAGE_ROOT"
-touch "$STORAGE_ROOT/dailybot-<session_id>.reported"
-```
-
-Replace `<session_id>` with the session ID shown above. The flag filename must match exactly what the hooks use — never invent a random fallback.
-
-Only do this on a **successful** send. If the report failed, do NOT create the flag — the user may want to retry.
-
-## Step 8 — Confirm to User
+After a successful report, the plugin automatically marks the session as reported via a PostToolUse hook — no manual step is needed.
 
 After the command runs:
 
