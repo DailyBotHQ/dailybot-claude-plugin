@@ -57,9 +57,32 @@ fi
 touch "$LAST_FIRED" 2>/dev/null
 
 # Detect auth status (cheap, bounded).
-AUTH_OK="false"
+# Hooks run with a minimal PATH, so also check common install locations.
+DAILYBOT_BIN=""
 if command -v dailybot >/dev/null 2>&1; then
-  if timeout 3 dailybot status --auth >/dev/null 2>&1; then
+  DAILYBOT_BIN="dailybot"
+else
+  for p in \
+    "$HOME/.local/bin/dailybot" \
+    "$HOME/bin/dailybot" \
+    "/usr/local/bin/dailybot" \
+    /Library/Frameworks/Python.framework/Versions/*/bin/dailybot \
+    "$HOME/Library/Python/*/bin/dailybot"; do
+    if [ -x "$p" ] 2>/dev/null; then
+      DAILYBOT_BIN="$p"
+      break
+    fi
+  done
+fi
+
+AUTH_OK="false"
+if [ -n "$DAILYBOT_BIN" ]; then
+  if command -v timeout >/dev/null 2>&1; then
+    RUN_AUTH="timeout 3 $DAILYBOT_BIN"
+  else
+    RUN_AUTH="$DAILYBOT_BIN"
+  fi
+  if $RUN_AUTH status --auth >/dev/null 2>&1; then
     AUTH_OK="true"
   fi
 fi
