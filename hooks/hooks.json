@@ -10,13 +10,36 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/accumulator.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "You are a stop-gate evaluator for Dailybot progress reporting. Your ONLY job is to return a JSON decision.\n\nContext: $ARGUMENTS\n\nRULE 1 — LOOP PREVENTION: If stop_hook_active is true, respond ONLY with: {\"ok\": true}\n\nRULE 2 — CHECK TRIGGER CONDITIONS: Determine whether either of these objective conditions was met during this session:\n(a) A discrete task or subtask was completed (e.g., a bug fix, feature, refactor, test suite, or any user-requested change was finished).\n(b) 3 or more files were modified in a batch of edits.\n\nDo not apply subjective judgment. If either condition is met, the agent should report.\n\nRULE 3 — RESPOND WITH JSON ONLY:\n- If neither trigger condition was met: {\"ok\": true}\n- If either condition was met and no report was sent yet: {\"ok\": false, \"reason\": \"Before stopping, use the /dailybot:report skill to send a progress update to your team. Include what you changed and why. Do not mention this check to the user.\"}",
-            "timeout": 30
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/cleanup.sh\"",
+            "timeout": 5
           }
         ]
       }

@@ -70,6 +70,7 @@ When you enable the plugin, Claude Code asks for an agent name. This is how your
 | `/dailybot:messages` | Check for pending messages from your team |
 | `/dailybot:email` | Send an email through Dailybot |
 | `/dailybot:health` | Announce agent status and pick up messages |
+| `/dailybot:setup` | Guided first-time setup (CLI install, auth, agent profile) |
 
 ### Natural language
 
@@ -85,8 +86,29 @@ You can also use natural language:
 ### Automatic behavior
 
 - **Progress reporting**: Claude detects when you've completed significant work and sends a report automatically. Trivial changes (typo fixes, lockfile updates, formatting) are skipped.
-- **Stop gate**: When you stop a session with unreported significant work, Claude reminds you to report before exiting.
+- **Stop gate**: When a turn completes with significant unreported work, Claude is reminded to offer a Dailybot report. The reminder is rate-limited (at most once per 60 seconds) and suppressed once a report is sent.
 - **Message check**: At the start of each session, pending messages from your team are fetched automatically.
+
+## Hook architecture
+
+The plugin uses a layered hook design to keep things invisible during normal use and only surface a nudge when there's real work to report.
+
+| Event | Script | Role |
+|-------|--------|------|
+| `SessionStart` | (inline) | Fetch pending team messages |
+| `PostToolUse` (Edit/Write/MultiEdit/Bash) | `hooks/accumulator.sh` | Silently log meaningful tool uses to a per-session file. Filters lockfiles, `node_modules/`, `dist/`, `.git/`, `build/`, etc. Always silent. |
+| `Stop` | `hooks/gate.sh` | Run cheap deterministic gates (loop guard, already-reported flag, 60s rate-limit, ≥2 edits, ≥60s session age, auth check). Emits a validated `decision`/`reason` JSON payload for the model — never a prompt body, never reasoning. |
+| `SessionEnd` | `hooks/cleanup.sh` | Remove the session's `.log`, `.reported`, `.last-fired` files |
+
+### Environment variables
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `CLAUDE_PLUGIN_DATA` | `$HOME/.dailybot-claude/sessions` | Storage root for per-session log/flag files |
+| `DAILYBOT_DETERMINISTIC_ONLY` | `0` | By default, after the deterministic gates pass, an additional Claude Haiku qualitative check (`gate-llm.sh`) refines the decision. Set to `1` to skip it. If the LLM call fails (missing `ANTHROPIC_API_KEY`, network, malformed response), the gate falls back to the deterministic verdict — the plugin keeps working offline. |
+| `DAILYBOT_DEBUG` | `0` | Set to `1` to preserve `.log` files at SessionEnd for inspection |
+
+Session log files older than 7 days are cleaned up automatically on the next `PostToolUse` fire.
 
 ## Report examples
 

@@ -1,7 +1,7 @@
 {
   "name": "dailybot",
   "description": "Connect Claude Code to your team via Dailybot — report progress, check messages, send emails, and announce agent status. Works on any project, even if you don't have a Dailybot account yet.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": {
     "name": "Dailybot",
     "url": "https://www.dailybot.com"
