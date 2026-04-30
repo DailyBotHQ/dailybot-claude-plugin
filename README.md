@@ -4,7 +4,7 @@ Connect [Claude Code](https://code.claude.com) to your team via [Dailybot](https
 
 ## What it does
 
-This plugin gives Claude Code four capabilities for team collaboration through Dailybot:
+This plugin gives Claude Code five capabilities for team collaboration through Dailybot:
 
 **Progress Reporting** — When you complete meaningful work (shipping a feature, fixing a bug, finishing a task), the plugin sends a standup-style progress report to Dailybot. Reports are written in a human-first style: they describe what was accomplished and why it matters, not which files changed.
 
@@ -13,6 +13,8 @@ This plugin gives Claude Code four capabilities for team collaboration through D
 **Email** — Send emails to anyone through Dailybot. Useful for notifications, summaries, follow-ups, or weekly reports. Replies are delivered back as messages to your agent inbox.
 
 **Health Status** — Announce your agent's status (online, working, offline, degraded) so the team knows what's happening. Health checks also deliver any pending messages from the team.
+
+**Guided Setup** — First-time setup walks you through CLI installation, authentication, and agent profile configuration step by step.
 
 ## Install
 
@@ -32,7 +34,7 @@ claude --plugin-dir ./path/to/dailybot-claude-plugin
 
 ### 1. Dailybot CLI
 
-The plugin requires the Dailybot CLI. If it's not installed, Claude will guide you through it on first use. Or install it yourself:
+The plugin requires the Dailybot CLI. Run `/dailybot:setup` for guided setup, or install it yourself:
 
 ```bash
 # Option A: pip
@@ -96,6 +98,7 @@ The plugin uses a layered hook design to keep things invisible during normal use
 | Event | Script | Role |
 |-------|--------|------|
 | `SessionStart` | (inline) | Fetch pending team messages |
+| `PostToolUse` (Bash) | `hooks/mark-reported.sh` | Detect successful report commands (`dailybot agent update` or HTTP API) and silently create a `.reported` flag so the Stop gate does not re-nudge. Always silent. |
 | `PostToolUse` (Edit/Write/MultiEdit/Bash) | `hooks/accumulator.sh` | Silently log meaningful tool uses to a per-session file. Filters lockfiles, `node_modules/`, `dist/`, `.git/`, `build/`, etc. Always silent. |
 | `Stop` | `hooks/gate.sh` | Run cheap deterministic gates (loop guard, already-reported flag, 60s rate-limit, ≥2 edits, ≥60s session age, auth check). Emits a validated `decision`/`reason` JSON payload for the model — never a prompt body, never reasoning. |
 | `SessionEnd` | `hooks/cleanup.sh` | Remove the session's `.log`, `.reported`, `.last-fired` files |
