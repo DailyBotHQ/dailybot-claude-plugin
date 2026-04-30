@@ -1,89 +1,306 @@
 #!/bin/bash
-# Test the Stop hook prompt by simulating what Claude Code sends to the evaluator LLM.
-# Usage:
-#   bash scripts/test-hook.sh trivial       — should return {"ok": true}
-#   bash scripts/test-hook.sh significant   — should return {"ok": false, "reason": "..."}
-#   bash scripts/test-hook.sh loop          — should return {"ok": true} (loop prevention)
+# Test harness for Dailybot hook scripts. No API calls.
+# Verifies exit codes and that stdout is either empty or one valid JSON object.
 #
-# Requires: ANTHROPIC_API_KEY environment variable
+# Usage:
+#   bash scripts/test-hook.sh              — run all scenarios
+#   bash scripts/test-hook.sh <scenario>   — run one scenario
 
-set -euo pipefail
+set -u
 
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    echo "Error: ANTHROPIC_API_KEY not set"
-    echo "Export it first: export ANTHROPIC_API_KEY=sk-ant-..."
-    exit 1
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ACCUMULATOR="$ROOT/hooks/accumulator.sh"
+GATE="$ROOT/hooks/gate.sh"
+CLEANUP="$ROOT/hooks/cleanup.sh"
+
+# Use an isolated storage root for tests.
+export CLAUDE_PLUGIN_DATA="$(mktemp -d)"
+trap 'rm -rf "$CLAUDE_PLUGIN_DATA"' EXIT
+
+PASS=0
+FAIL=0
+
+assert_empty_or_json() {
+  local label="$1" output="$2"
+  if [ -z "$output" ]; then
+    echo "  [PASS] $label: empty stdout"
+    PASS=$((PASS+1))
+    return 0
+  fi
+  if printf '%s' "$output" | jq -e . >/dev/null 2>&1; then
+    if printf '%s' "$output" | grep -qE 'RULE [0-9]|evaluator|prompt'; then
+      echo "  [FAIL] $label: stdout JSON contains forbidden tokens"
+      echo "    >>> $output"
+      FAIL=$((FAIL+1))
+      return 1
+    fi
+    echo "  [PASS] $label: valid clean JSON"
+    PASS=$((PASS+1))
+    return 0
+  fi
+  echo "  [FAIL] $label: stdout is neither empty nor valid JSON"
+  echo "    >>> $output"
+  FAIL=$((FAIL+1))
+  return 1
+}
+
+assert_exit() {
+  local label="$1" expected="$2" actual="$3"
+  if [ "$actual" = "$expected" ]; then
+    echo "  [PASS] $label: exit=$actual"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] $label: expected exit=$expected got $actual"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+run_accumulator() {
+  printf '%s' "$1" | bash "$ACCUMULATOR"
+  return $?
+}
+
+run_gate() {
+  printf '%s' "$1" | bash "$GATE"
+}
+
+scenario_trivial() {
+  echo "=== trivial: empty log → gate exits silently ==="
+  local sid="test-trivial-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out; out="$(run_gate "$input")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  assert_empty_or_json "stdout" "$out"
+}
+
+scenario_loop() {
+  echo "=== loop: stop_hook_active=true → silent ==="
+  local sid="test-loop-$$"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:true}')"
+  local out; out="$(run_gate "$input")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  assert_empty_or_json "stdout" "$out"
+}
+
+scenario_significant() {
+  echo "=== significant: 3 edits + aged log → emits clean JSON ==="
+  local sid="test-sig-$$"
+  for f in src/a.py src/b.py src/c.py; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+
+  # Backdate first log entry to satisfy 60s session-age guard.
+  local logf="$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  local old_ts; old_ts=$(date -u -r $(($(date +%s) - 120)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$(($(date +%s) - 120))" +%Y-%m-%dT%H:%M:%SZ)
+  awk -v ts="$old_ts" 'NR==1{$1=ts; OFS="\t"; print; next}{print}' "$logf" > "$logf.tmp" && mv "$logf.tmp" "$logf"
+
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out; out="$(run_gate "$input")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ -z "$out" ]; then
+    echo "  [FAIL] expected non-empty JSON, got empty"
+    FAIL=$((FAIL+1))
+  else
+    assert_empty_or_json "stdout" "$out"
+    if printf '%s' "$out" | jq -e '.decision == "block" and .reason and .suppressOutput == true' >/dev/null 2>&1; then
+      echo "  [PASS] payload structure"
+      PASS=$((PASS+1))
+    else
+      echo "  [FAIL] payload missing required fields (expected decision/reason/suppressOutput)"
+      FAIL=$((FAIL+1))
+    fi
+  fi
+}
+
+scenario_already_reported() {
+  echo "=== already reported: .reported flag → silent ==="
+  local sid="test-rep-$$"
+  for f in src/a.py src/b.py src/c.py; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+  touch "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out; out="$(run_gate "$input")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  assert_empty_or_json "stdout" "$out"
+  [ -z "$out" ] && { echo "  [PASS] no nudge after report"; PASS=$((PASS+1)); } || { echo "  [FAIL] nudged after report"; FAIL=$((FAIL+1)); }
+}
+
+scenario_rate_limited() {
+  echo "=== rate limited: fresh .last-fired → silent ==="
+  local sid="test-rate-$$"
+  for f in src/a.py src/b.py src/c.py; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+  touch "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.last-fired"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out; out="$(run_gate "$input")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  [ -z "$out" ] && { echo "  [PASS] rate-limit silenced"; PASS=$((PASS+1)); } || { echo "  [FAIL] fired despite rate limit"; FAIL=$((FAIL+1)); }
+}
+
+scenario_filtered() {
+  echo "=== filtered: lockfile/node_modules paths not logged ==="
+  local sid="test-filt-$$"
+  for f in package-lock.json yarn.lock node_modules/lib/x.js dist/main.js .git/HEAD; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+  local logf="$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  if [ ! -f "$logf" ] || [ ! -s "$logf" ]; then
+    echo "  [PASS] all trivial paths filtered"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] something leaked into log:"; cat "$logf"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_filter_false_positive() {
+  echo "=== filter: 'unlock.py' must NOT match '.lock' ==="
+  local sid="test-fp-$$"
+  local tu
+  tu="$(jq -c -n --arg sid "$sid" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:"src/unlock.py"}}')"
+  run_accumulator "$tu"
+  local logf="$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  if [ -s "$logf" ] && grep -q "unlock.py" "$logf"; then
+    echo "  [PASS] unlock.py logged correctly"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] unlock.py was filtered by mistake"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_cleanup() {
+  echo "=== cleanup: removes session files ==="
+  local sid="test-clean-$$"
+  touch "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  touch "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported"
+  touch "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.last-fired"
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"SessionEnd"}')"
+  printf '%s' "$input" | bash "$CLEANUP"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ ! -e "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log" ] && \
+     [ ! -e "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.reported" ] && \
+     [ ! -e "$CLAUDE_PLUGIN_DATA/dailybot-${sid}.last-fired" ]; then
+    echo "  [PASS] all session files removed"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] session files remain"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_llm_disabled() {
+  echo "=== llm disabled: DAILYBOT_DETERMINISTIC_ONLY=1 → nudge fires, gate-llm.sh not invoked ==="
+  local sid="test-llmoff-$$"
+  for f in src/a.py src/b.py src/c.py; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+  local logf="$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  local old_ts; old_ts=$(date -u -r $(($(date +%s) - 120)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$(($(date +%s) - 120))" +%Y-%m-%dT%H:%M:%SZ)
+  awk -v ts="$old_ts" 'NR==1{$1=ts; OFS="\t"; print; next}{print}' "$logf" > "$logf.tmp" && mv "$logf.tmp" "$logf"
+
+  # Sentinel file: gate-llm.sh would touch this if invoked. We replace it
+  # temporarily with a tracer to detect invocation.
+  local tracer="$CLAUDE_PLUGIN_DATA/llm-invoked"
+  local real_llm="$ROOT/hooks/gate-llm.sh"
+  local backup="$CLAUDE_PLUGIN_DATA/gate-llm.sh.bak"
+  cp "$real_llm" "$backup"
+  cat > "$real_llm" <<EOF
+#!/bin/bash
+touch "$tracer"
+exit 1
+EOF
+  chmod +x "$real_llm"
+
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out
+  out="$(DAILYBOT_DETERMINISTIC_ONLY=1 ANTHROPIC_API_KEY= bash -c "printf '%s' '$input' | bash '$GATE'")"
+  local rc=$?
+
+  # Restore original
+  mv "$backup" "$real_llm"
+
+  assert_exit "exit code" 0 $rc
+  if [ -e "$tracer" ]; then
+    echo "  [FAIL] gate-llm.sh was invoked despite DAILYBOT_DETERMINISTIC_ONLY=1"
+    FAIL=$((FAIL+1))
+    rm -f "$tracer"
+  else
+    echo "  [PASS] gate-llm.sh not invoked"
+    PASS=$((PASS+1))
+  fi
+  if [ -n "$out" ] && printf '%s' "$out" | jq -e '.decision == "block" and .reason' >/dev/null 2>&1; then
+    echo "  [PASS] deterministic nudge fired"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] expected deterministic nudge, got: $out"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+scenario_llm_failure() {
+  echo "=== llm failure: gate-llm.sh exits 1 → fall back to deterministic nudge ==="
+  local sid="test-llmfail-$$"
+  for f in src/a.py src/b.py src/c.py; do
+    local tu
+    tu="$(jq -c -n --arg sid "$sid" --arg fp "$f" '{session_id:$sid, tool_name:"Edit", tool_input:{file_path:$fp}}')"
+    run_accumulator "$tu"
+  done
+  local logf="$CLAUDE_PLUGIN_DATA/dailybot-${sid}.log"
+  local old_ts; old_ts=$(date -u -r $(($(date +%s) - 120)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$(($(date +%s) - 120))" +%Y-%m-%dT%H:%M:%SZ)
+  awk -v ts="$old_ts" 'NR==1{$1=ts; OFS="\t"; print; next}{print}' "$logf" > "$logf.tmp" && mv "$logf.tmp" "$logf"
+
+  # Force gate-llm.sh failure by unsetting ANTHROPIC_API_KEY (the real script
+  # exits 1 immediately when the key is missing).
+  local input
+  input="$(jq -c -n --arg sid "$sid" '{session_id:$sid, hook_event_name:"Stop", stop_hook_active:false}')"
+  local out
+  out="$(unset DAILYBOT_DETERMINISTIC_ONLY; unset ANTHROPIC_API_KEY; printf '%s' "$input" | bash "$GATE")"
+  local rc=$?
+  assert_exit "exit code" 0 $rc
+  if [ -n "$out" ] && printf '%s' "$out" | jq -e '.decision == "block" and .reason' >/dev/null 2>&1; then
+    echo "  [PASS] deterministic fallback fired despite LLM failure"
+    PASS=$((PASS+1))
+  else
+    echo "  [FAIL] expected fallback nudge, got: $out"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+ALL=(trivial loop significant already_reported rate_limited filtered filter_false_positive cleanup llm_disabled llm_failure)
+TARGET="${1:-all}"
+
+if [ "$TARGET" = "all" ]; then
+  for s in "${ALL[@]}"; do "scenario_$s"; done
+else
+  "scenario_$TARGET"
 fi
 
-SCENARIO="${1:-trivial}"
-
-case "$SCENARIO" in
-    trivial)
-        LAST_MSG="The file contains a Django view that handles user authentication. It uses JWT tokens for session management. Let me know if you have any other questions."
-        STOP_HOOK_ACTIVE=false
-        echo "=== SCENARIO: Trivial (Q&A, no deliverables) ==="
-        echo "=== EXPECTED: {\"ok\": true} ==="
-        ;;
-    significant)
-        LAST_MSG="I've implemented the notification preferences system. Users can now configure which alerts they receive via email and in-app. Created the data model, REST API endpoints (CRUD), and a full test suite with 32 test cases. All tests pass."
-        STOP_HOOK_ACTIVE=false
-        echo "=== SCENARIO: Significant work (feature implemented) ==="
-        echo "=== EXPECTED: {\"ok\": false, \"reason\": \"...\"} ==="
-        ;;
-    loop)
-        LAST_MSG="Reported to Dailybot: Implemented notification preferences with full test coverage."
-        STOP_HOOK_ACTIVE=true
-        echo "=== SCENARIO: Loop prevention (stop_hook_active=true) ==="
-        echo "=== EXPECTED: {\"ok\": true} ==="
-        ;;
-    typo)
-        LAST_MSG="Fixed the typo in the README — changed 'recieve' to 'receive'."
-        STOP_HOOK_ACTIVE=false
-        echo "=== SCENARIO: Trivial commit (typo fix) ==="
-        echo "=== EXPECTED: {\"ok\": true} ==="
-        ;;
-    explore)
-        LAST_MSG="I've explored the codebase structure. The project uses Django 4.2 with DRF, has a service layer pattern, and tests follow the *_test.py naming convention. The main business logic lives in app/domain/services/."
-        STOP_HOOK_ACTIVE=false
-        echo "=== SCENARIO: Code exploration (no output) ==="
-        echo "=== EXPECTED: {\"ok\": true} ==="
-        ;;
-    bugfix)
-        LAST_MSG="Fixed the timezone bug in user profiles. Users without a timezone set were seeing a 500 error on their profile page because the serializer wasn't handling None values. Added a fallback to UTC and wrote 3 test cases covering the edge cases."
-        STOP_HOOK_ACTIVE=false
-        echo "=== SCENARIO: Bug fix (significant) ==="
-        echo "=== EXPECTED: {\"ok\": false, \"reason\": \"...\"} ==="
-        ;;
-    *)
-        echo "Unknown scenario: $SCENARIO"
-        echo "Available: trivial, significant, loop, typo, explore, bugfix"
-        exit 1
-        ;;
-esac
-
-HOOK_PROMPT='You are a stop-gate evaluator for Dailybot progress reporting. Your ONLY job is to return a JSON decision.\n\nContext: $ARGUMENTS\n\nRULE 1 — LOOP PREVENTION: If stop_hook_active is true, respond ONLY with: {\"ok\": true}\n\nRULE 2 — EVALUATE SIGNIFICANCE: Apply the Standup Test — would this work be worth mentioning in a real daily standup with the team?\n\nSIGNIFICANT (report): feature implemented, bug fixed, major refactor completed, multi-step task fully finished, test suite added or major coverage improvement, deployment or migration executed, meaningful documentation written (API docs, architecture docs, onboarding guides), analysis or research completed with clear findings or deliverables, 3+ related commits building a feature.\n\nNOT SIGNIFICANT (skip): answering questions or Q&A without deliverables, reading or exploring code without output, making plans without execution, single trivial commits (typo, rename, comment), formatting or linting fixes, lockfile or dependency updates, failed attempts that were rolled back, uncommitted work in progress, ongoing work that is not finished yet, vague or unspecific work that cannot be described concretely.\n\nRULE 3 — RESPOND WITH JSON ONLY:\n- If work is NOT significant: {\"ok\": true}\n- If significant unreported work was completed: {\"ok\": false, \"reason\": \"Before stopping, use the /dailybot:report skill to send a progress update to your team about the work you just completed. Do not mention this check to the user.\"}'
-
-ARGUMENTS="{\"session_id\":\"test-session\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":${STOP_HOOK_ACTIVE},\"last_assistant_message\":\"${LAST_MSG}\"}"
-
-FULL_PROMPT="${HOOK_PROMPT//\$ARGUMENTS/$ARGUMENTS}"
-
 echo ""
-echo "Calling Haiku..."
-echo ""
-
-RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
-    -H "content-type: application/json" \
-    -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-    -H "anthropic-version: 2023-06-01" \
-    -d "$(jq -n \
-        --arg prompt "$FULL_PROMPT" \
-        '{
-            "model": "claude-haiku-4-5-20250315",
-            "max_tokens": 256,
-            "messages": [{"role": "user", "content": $prompt}]
-        }')")
-
-echo "=== RAW RESPONSE ==="
-echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "Unknown error"'
-echo ""
-echo "=== DONE ==="
+echo "=== Results: $PASS passed, $FAIL failed ==="
+[ "$FAIL" -eq 0 ]
