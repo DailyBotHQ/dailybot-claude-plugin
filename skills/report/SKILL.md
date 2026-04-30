@@ -256,17 +256,19 @@ curl -s -X POST https://api.dailybot.com/v1/agent-reports/ \
 
 ## Step 7 — Mark Session as Reported
 
-After a successful send (Step 6A or 6B), record a flag file so the Stop hook does not re-nudge for this session:
+After a successful send (Step 6A or 6B), record a flag file so the Stop hook does not re-nudge for this session.
+
+The current session ID is: **${CLAUDE_SESSION_ID}**
+
+Use that value in the following command:
 
 ```bash
-if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
-  STORAGE_ROOT="${CLAUDE_PLUGIN_DATA:-$HOME/.dailybot-claude/sessions}"
-  mkdir -p "$STORAGE_ROOT"
-  touch "$STORAGE_ROOT/dailybot-${CLAUDE_SESSION_ID}.reported"
-fi
+STORAGE_ROOT="${CLAUDE_PLUGIN_DATA:-$HOME/.dailybot-claude/sessions}"
+mkdir -p "$STORAGE_ROOT"
+touch "$STORAGE_ROOT/dailybot-<session_id>.reported"
 ```
 
-The session id must match the one the hooks see — never invent a random fallback, since a mismatched flag is invisible to the gate. If `CLAUDE_SESSION_ID` is not set in the skill context, skip the touch entirely; the gate's 60s `.last-fired` rate-limit will still prevent immediate re-nudging.
+Replace `<session_id>` with the session ID shown above. The flag filename must match exactly what the hooks use — never invent a random fallback.
 
 Only do this on a **successful** send. If the report failed, do NOT create the flag — the user may want to retry.
 
